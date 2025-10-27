@@ -5,11 +5,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
+# Get the directory where this file is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
 # Create data directory if it doesn't exist
-os.makedirs("data", exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # SQLite database URL (free, no hosting needed)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./data/sprint_connect.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{os.path.join(DATA_DIR, 'sprint_connect.db')}"
 
 # Create engine
 engine = create_engine(
