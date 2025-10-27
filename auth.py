@@ -8,8 +8,9 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from . import models, schemas
-from .database import get_db
+import models
+import schemas
+from database import get_db
 
 # -------- Security configuration --------
 # Забираем секрет из окружения, иначе дефолт для разработки
