@@ -17,12 +17,12 @@ pip install -r requirements.txt
 REM Initialize database if it doesn't exist
 if not exist "data\sprint_connect.db" (
     echo Initializing database with demo data...
-    python init_db.py
+    python -m backend.init_db
 )
 
 REM Start backend in new window
 echo Starting backend API...
-start "Sprint Connect Backend" cmd /k "venv\Scripts\activate && uvicorn main:app --reload --port 8000"
+start "Sprint Connect Backend" cmd /k "venv\Scripts\activate && uvicorn backend.main:app --reload --port 8000"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak
@@ -37,4 +37,4 @@ echo Close this window to stop the frontend
 echo Close the backend window to stop the API
 echo ----------------------------------------
 
-streamlit run app.py
+streamlit run frontend\app.py

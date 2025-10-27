@@ -8,10 +8,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 import random
 
-import models
-import schemas
-import auth
-from database import engine, get_db
+from . import models, schemas, auth
+from .database import engine, get_db
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
