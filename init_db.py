@@ -1,14 +1,10 @@
 """Initialize database with demo data for Sprint Connect"""
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from datetime import datetime, timedelta
 import random
-from backend import models
-from backend.database import engine, SessionLocal
-from backend.auth import get_password_hash
+import models
+from database import engine, SessionLocal
+from auth import get_password_hash
 
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
