@@ -24,66 +24,73 @@ A peer support platform designed for SRH Haarlem's 5-week sprint system, helping
 - pip (Python package manager)
 - Git
 
-## Installation & Setup
+## Quick Start
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/oskarkuz/sprint-connect.git
-cd sprint-connect
-```
-
-### 2. Create a Virtual Environment
+### Option 1: Automated Setup (Recommended)
 
 **Windows:**
 ```bash
-python -m venv venv
-venv\Scripts\activate
+cd scripts
+setup.bat
 ```
 
 **macOS/Linux:**
 ```bash
-python3 -m venv venv
+cd scripts
+chmod +x setup.sh
+./setup.sh
+```
+
+### Option 2: Manual Setup
+
+```bash
+# 1. Create virtual environment
+python -m venv venv
+
+# 2. Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
 source venv/bin/activate
-```
 
-### 3. Install Dependencies
-
-```bash
-pip install --upgrade pip
+# 3. Install dependencies
 pip install -r requirements.txt
+
+# 4. Initialize database
+python -m backend.init_db
 ```
 
-### 4. Initialize the Database
+## Running the Application
 
+You need **TWO terminals** running at the same time:
+
+### Terminal 1 - Backend API
 ```bash
-python init_db.py
+# Activate venv first
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# Start backend
+uvicorn backend.main:app --reload --port 8000
 ```
 
-This will:
-- Create the database with all necessary tables
-- Add demo accounts for testing
-- Add sample courses and data
+The API will be available at:
+- **API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-### 5. Run the Application
-
-You need to run both the backend and frontend in separate terminals:
-
-**Terminal 1 - Backend API:**
+### Terminal 2 - Frontend
 ```bash
-uvicorn main:app --reload --port 8000
+# Activate venv first (in new terminal)
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# Start frontend
+streamlit run frontend/app.py
 ```
 
-**Terminal 2 - Frontend (in a new terminal, activate venv first):**
-```bash
-streamlit run app.py
-```
-
-The application will open in your browser at `http://localhost:8501`
+The app will open automatically at: http://localhost:8501
 
 ## Demo Accounts
 
-After running `init_db.py`, you can login with:
+After running setup, you can login with:
 
 - **Student Account**:
   - Email: `sarah@srh.nl`
@@ -97,18 +104,37 @@ After running `init_db.py`, you can login with:
 
 ```
 sprint-connect/
-├── main.py              # FastAPI backend application
-├── app.py               # Streamlit frontend application
-├── models.py            # Database models (SQLAlchemy)
-├── schemas.py           # Pydantic schemas for API
-├── auth.py              # Authentication logic
-├── database.py          # Database configuration
-├── init_db.py           # Database initialization script
-├── requirements.txt     # Python dependencies
-├── .gitignore          # Git ignore rules
-├── README.md           # This file
-├── DEPLOYMENT_GUIDE.md # Deployment instructions
-└── data/               # Database storage (created automatically)
+├── backend/                 # FastAPI backend
+│   ├── __init__.py         # Package initializer
+│   ├── main.py             # FastAPI application & routes
+│   ├── models.py           # SQLAlchemy database models
+│   ├── schemas.py          # Pydantic schemas for validation
+│   ├── auth.py             # Authentication & authorization
+│   ├── database.py         # Database configuration
+│   └── init_db.py          # Database initialization with demo data
+│
+├── frontend/               # Streamlit frontend
+│   └── app.py              # Streamlit application & UI
+│
+├── docs/                   # Documentation
+│   ├── QUICK_START.md      # Quick start guide
+│   ├── CONTRIBUTING.md     # Developer contribution guide
+│   └── DEPLOYMENT_GUIDE.md # Deployment instructions
+│
+├── scripts/                # Automation scripts
+│   ├── setup.sh            # Unix setup script
+│   ├── setup.bat           # Windows setup script
+│   └── start.bat           # Windows quick start
+│
+├── data/                   # Database storage (auto-created)
+│   └── sprint_connect.db   # SQLite database
+│
+├── tests/                  # Test files (to be implemented)
+│
+├── .gitignore             # Git ignore rules
+├── .env.example           # Environment variables template
+├── requirements.txt       # Python dependencies
+└── README.md              # This file
 ```
 
 ## Development
@@ -131,18 +157,19 @@ http://localhost:8501
 **Issue: Cannot connect to backend**
 - Make sure the backend is running on port 8000
 - Check if another application is using port 8000
-- Verify the API_BASE_URL in `app.py` is set to `http://localhost:8000`
+- Verify the API_BASE_URL in `frontend/app.py` is set to `http://localhost:8000`
 
 **Issue: Module not found errors**
 - Make sure you activated the virtual environment
 - Run `pip install -r requirements.txt` again
+- Make sure you're running from the project root directory
 
 **Issue: Database errors**
-- Delete the `data/` folder and run `python init_db.py` again
+- Delete the `data/` folder and run `python -m backend.init_db` again
 
 **Issue: Port already in use**
-- For backend: `uvicorn main:app --reload --port 8001` (change port)
-- For frontend: `streamlit run app.py --server.port 8502` (change port)
+- For backend: `uvicorn backend.main:app --reload --port 8001` (change port)
+- For frontend: `streamlit run frontend/app.py --server.port 8502` (change port)
 
 ## Environment Variables
 
@@ -155,6 +182,9 @@ DATABASE_URL=sqlite:///./data/sprint_connect.db
 
 ## Contributing
 
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed contribution guidelines.
+
+Quick steps:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes
@@ -164,10 +194,16 @@ DATABASE_URL=sqlite:///./data/sprint_connect.db
 
 ## Security Notes
 
-- The default `SECRET_KEY` in `auth.py` should be changed for production
+- The default `SECRET_KEY` in `backend/auth.py` should be changed for production
 - Never commit your `.env` file with real credentials
 - Use HTTPS in production
-- Review CORS settings in `main.py` before deploying
+- Review CORS settings in `backend/main.py` before deploying
+
+## Documentation
+
+- 📖 [Quick Start Guide](docs/QUICK_START.md) - Get started in 5 minutes
+- 👥 [Contributing Guide](docs/CONTRIBUTING.md) - How to contribute
+- 🚀 [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) - Deploy to production
 
 ## License
 

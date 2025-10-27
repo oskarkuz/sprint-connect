@@ -2,9 +2,9 @@
 
 from datetime import datetime, timedelta
 import random
-import models
-from database import engine, SessionLocal
-from auth import get_password_hash
+from . import models
+from .database import engine, SessionLocal
+from .auth import get_password_hash
 
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
