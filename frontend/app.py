@@ -19,7 +19,7 @@ st.set_page_config(
 # API Configuration
 API_BASE_URL = "http://localhost:8000"
 
-# Custom CSS for better styling
+# Custom CSS for better styling with SRH Haarlem orange branding
 st.markdown("""
     <style>
     .main {
@@ -27,17 +27,23 @@ st.markdown("""
     }
     .stButton > button {
         width: 100%;
-        background-color: #1E3A8A;
+        background-color: #F97316;
         color: white;
+        font-weight: 600;
+        border: none;
+        transition: all 0.3s ease;
     }
     .stButton > button:hover {
-        background-color: #F97316;
+        background-color: #EA580C;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(249, 115, 22, 0.3);
     }
     .metric-card {
-        background-color: #f0f2f6;
+        background-color: #FFF7ED;
         padding: 1rem;
         border-radius: 0.5rem;
         margin-bottom: 1rem;
+        border-left: 4px solid #F97316;
     }
     .success-message {
         padding: 1rem;
@@ -49,9 +55,27 @@ st.markdown("""
     .info-message {
         padding: 1rem;
         border-radius: 0.5rem;
-        background-color: #3B82F6;
+        background-color: #F97316;
         color: white;
         margin-bottom: 1rem;
+    }
+    h1, h2, h3 {
+        color: #EA580C;
+    }
+    .stSelectbox > div > div {
+        border-color: #F97316;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 10px 20px;
+        background-color: #FFF7ED;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #F97316;
+        color: white;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -61,6 +85,8 @@ if 'token' not in st.session_state:
     st.session_state.token = None
 if 'user' not in st.session_state:
     st.session_state.user = None
+if 'active_video_circle' not in st.session_state:
+    st.session_state.active_video_circle = None
 
 # Helper functions
 def make_request(method, endpoint, data=None, authenticated=True):
@@ -150,19 +176,50 @@ def login_form():
 def display_sidebar():
     """Display sidebar navigation"""
     with st.sidebar:
-        st.image("https://via.placeholder.com/300x100/1E3A8A/FFFFFF?text=Sprint+Connect", width=250)
+        st.image("https://via.placeholder.com/300x100/F97316/FFFFFF?text=Sprint+Connect", width=250)
         
         if st.session_state.user:
             st.markdown(f"### 👋 Welcome, {st.session_state.user['username']}!")
             st.markdown(f"**Role:** {st.session_state.user['role'].title()}")
-            
+
             st.markdown("---")
-            
+
+            # Notifications Section
+            notifications_data = make_request("GET", "/notifications")
+            if notifications_data:
+                unread_count = len([n for n in notifications_data if not n['is_read']])
+
+                if unread_count > 0:
+                    st.markdown(f"### 🔔 Notifications ({unread_count})")
+
+                    with st.expander("View Notifications", expanded=False):
+                        for notification in notifications_data[:5]:  # Show last 5
+                            if not notification['is_read']:
+                                st.markdown(f"**{notification['title']}**")
+                                st.write(notification['message'])
+                                st.caption(notification['created_at'][:16])
+
+                                if st.button("Mark as Read", key=f"read_{notification['id']}"):
+                                    make_request("POST", f"/notifications/{notification['id']}/read")
+                                    st.rerun()
+
+                                st.markdown("---")
+
+                        if len(notifications_data) > 0:
+                            if st.button("Mark All as Read", use_container_width=True):
+                                make_request("POST", "/notifications/read-all")
+                                st.rerun()
+                else:
+                    st.markdown("### 🔔 Notifications")
+                    st.caption("✅ No new notifications")
+
+            st.markdown("---")
+
             # Navigation
-            st.markdown("### 🧭 Navigation")
+            st.markdown("###  🧭 Navigation")
             page = st.selectbox(
                 "Choose a page",
-                ["Dashboard", "Study Circles", "Wellness Check-In", "Community Hub", "Events", "Profile"]
+                ["Dashboard", "Study Circles", "Wellness Check-In", "Community Hub", "Events", "Achievements 🏆", "Pomodoro ⏱️", "Profile"]
             )
             
             if st.button("🚪 Logout", use_container_width=True):
@@ -318,9 +375,19 @@ def study_circles_page():
                         with col1:
                             st.button("💬 Group Chat", key=f"chat_{circle['id']}", use_container_width=True)
                         with col2:
-                            st.button("📹 Video Room", key=f"video_{circle['id']}", use_container_width=True)
+                            if st.button("📹 Video Room", key=f"video_{circle['id']}", use_container_width=True):
+                                st.session_state.active_video_circle = circle['id']
+                                st.rerun()
                         with col3:
                             st.button("📁 Resources", key=f"resources_{circle['id']}", use_container_width=True)
+
+                        # Show video chat if this circle is selected
+                        if st.session_state.active_video_circle == circle['id']:
+                            st.markdown("---")
+                            video_chat_component(circle['id'], circle['name'])
+                            if st.button("❌ Close Video Room", key=f"close_video_{circle['id']}", use_container_width=True):
+                                st.session_state.active_video_circle = None
+                                st.rerun()
             else:
                 st.info("You haven't joined any study circles yet. Check the 'Find Circles' tab to get started!")
     
@@ -515,7 +582,43 @@ def wellness_checkin_page():
             )
             
             st.plotly_chart(fig, use_container_width=True)
-        
+
+        # Stress Analysis Section
+        st.markdown("### 🧠 Stress Pattern Analysis")
+
+        stress_analysis = make_request("GET", "/wellness/stress-analysis")
+
+        if stress_analysis:
+            if stress_analysis.get('alert'):
+                st.warning(f"⚠️ {stress_analysis['alert_message']}")
+
+                # Show detailed analysis
+                with st.expander("📊 View Detailed Analysis", expanded=True):
+                    col_x, col_y, col_z = st.columns(3)
+
+                    with col_x:
+                        st.metric("Average Mood", f"{stress_analysis['average_mood']:.1f}/5")
+
+                    with col_y:
+                        st.metric("Recent Average", f"{stress_analysis['recent_average']:.1f}/5")
+
+                    with col_z:
+                        trend_emoji = "📉" if stress_analysis['trend'] == "declining" else "📈" if stress_analysis['trend'] == "improving" else "➡️"
+                        st.metric("Trend", f"{trend_emoji} {stress_analysis['trend'].title()}")
+
+                    st.info(f"We've analyzed {stress_analysis['total_checkins']} check-ins from the past 30 days.")
+
+                    if stress_analysis['low_mood_days_count'] > 0:
+                        st.warning(f"You've had {stress_analysis['low_mood_days_count']} days with mood below 2/5 in the last 30 days.")
+            else:
+                st.success("✅ Your mood patterns look healthy! Keep up the great work!")
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("Trend", f"📈 {stress_analysis['trend'].title()}")
+                with col_b:
+                    st.metric("Average Mood", f"{stress_analysis['average_mood']:.1f}/5")
+
         # Peer support section
         st.markdown("### 🤝 Peer Support")
         st.info("Feeling overwhelmed? Our trained peer supporters are here to help!")
@@ -781,6 +884,288 @@ def profile_page():
                 if result:
                     st.success("✅ Profile updated successfully!")
                     st.rerun()
+
+# ============== New Features Pages ==============
+
+def achievements_page():
+    """Gamification and achievements page"""
+    st.title("🏆 Achievements & Leaderboard")
+
+    # Get user stats
+    stats = make_request("GET", "/gamification/stats")
+
+    if stats:
+        # Display user stats at top
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Points", stats['points'])
+            st.caption(f"Total earned: {stats['total_points_earned']}")
+
+        with col2:
+            st.metric("Level", stats['level'], f"🎯")
+
+        with col3:
+            st.metric("Streak", f"{stats['streak_days']} days", "🔥")
+
+        with col4:
+            st.metric("Rank", f"#{stats['rank']}", f"of {stats['total_users']}")
+
+        st.markdown("---")
+
+        # Tabs for badges, leaderboard, and history
+        tab1, tab2, tab3 = st.tabs(["🎖️ My Badges", "📊 Leaderboard", "📜 Points History"])
+
+        with tab1:
+            st.markdown("### Your Badges")
+
+            my_badges = make_request("GET", "/gamification/my-badges")
+            all_badges = make_request("GET", "/gamification/badges")
+
+            if my_badges:
+                st.success(f"You've earned {len(my_badges)} badges!")
+
+                # Display earned badges
+                cols = st.columns(min(len(my_badges), 3))
+                for i, badge_data in enumerate(my_badges):
+                    badge = badge_data['badge']
+                    with cols[i % 3]:
+                        st.markdown(f"## {badge['icon']}")
+                        st.markdown(f"**{badge['name']}**")
+                        st.caption(badge['description'])
+                        st.caption(f"✨ {badge['rarity'].title()}")
+                        st.caption(f"Earned: {badge_data['earned_at'][:10]}")
+            else:
+                st.info("No badges earned yet. Keep participating to unlock badges!")
+
+            # Show available badges
+            st.markdown("### Available Badges")
+            if all_badges:
+                earned_badge_ids = [b['badge']['id'] for b in my_badges] if my_badges else []
+
+                for badge in all_badges:
+                    if badge['id'] not in earned_badge_ids:
+                        col_a, col_b = st.columns([1, 4])
+                        with col_a:
+                            st.markdown(f"### {badge['icon']}")
+                        with col_b:
+                            st.markdown(f"**{badge['name']}** - {badge['rarity'].title()}")
+                            st.caption(badge['description'])
+                            st.progress(0, text="Not earned yet")
+
+        with tab2:
+            st.markdown("### Leaderboard")
+
+            timeframe = st.selectbox("Timeframe", ["all_time", "week", "month"], format_func=lambda x: x.replace("_", " ").title())
+
+            leaderboard_data = make_request("GET", f"/gamification/leaderboard?timeframe={timeframe}&limit=20")
+
+            if leaderboard_data:
+                st.markdown(f"**Top Students - {timeframe.replace('_', ' ').title()}**")
+
+                for entry in leaderboard_data['leaderboard']:
+                    col_rank, col_user, col_level, col_points = st.columns([1, 3, 1, 2])
+
+                    with col_rank:
+                        if entry['rank'] == 1:
+                            st.markdown("### 🥇")
+                        elif entry['rank'] == 2:
+                            st.markdown("### 🥈")
+                        elif entry['rank'] == 3:
+                            st.markdown("### 🥉")
+                        else:
+                            st.write(f"**#{entry['rank']}**")
+
+                    with col_user:
+                        st.write(entry['username'])
+
+                    with col_level:
+                        st.write(f"Lvl {entry['level']}")
+
+                    with col_points:
+                        st.write(f"**{entry['points']} pts**")
+
+                    st.markdown("---")
+
+        with tab3:
+            st.markdown("### Points History")
+
+            transactions = make_request("GET", "/gamification/transactions?limit=30")
+
+            if transactions:
+                for trans in transactions:
+                    col_desc, col_pts, col_date = st.columns([3, 1, 2])
+
+                    with col_desc:
+                        st.write(f"**{trans['description']}**")
+
+                    with col_pts:
+                        color = "green" if trans['points'] > 0 else "red"
+                        st.markdown(f":{color}[+{trans['points']} pts]" if trans['points'] > 0 else f":{color}[{trans['points']} pts]")
+
+                    with col_date:
+                        st.caption(trans['created_at'][:16])
+            else:
+                st.info("No transactions yet. Start participating to earn points!")
+
+def pomodoro_page():
+    """Pomodoro timer page"""
+    st.title("⏱️ Pomodoro Timer")
+
+    # Get stats first
+    stats = make_request("GET", "/pomodoro/stats")
+
+    if stats:
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total Sessions", stats['total_sessions'])
+
+        with col2:
+            st.metric("Total Hours", f"{stats['total_hours']:.1f}h")
+
+        with col3:
+            st.metric("Today", stats['completed_today'])
+
+        with col4:
+            st.metric("Avg/Day", f"{stats['average_per_day']:.1f}")
+
+    st.markdown("---")
+
+    # Check for active session
+    active_session_data = make_request("GET", "/pomodoro/active")
+
+    if active_session_data and active_session_data.get('active'):
+        # Show active timer
+        session = active_session_data['session']
+        remaining = active_session_data['remaining_minutes']
+
+        st.success(f"⏰ Session in progress!")
+
+        # Display timer
+        minutes_left = int(remaining)
+        st.markdown(f"## {minutes_left} minutes remaining")
+
+        progress = 1 - (remaining / session['duration_minutes'])
+        st.progress(progress)
+
+        if st.button("✅ Complete Session"):
+            result = make_request("POST", f"/pomodoro/{session['id']}/complete")
+            if result:
+                st.success("🎉 Pomodoro completed! +5 points earned!")
+                st.balloons()
+                st.rerun()
+
+    else:
+        # Start new timer
+        st.markdown("### Start New Pomodoro Session")
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            duration = st.selectbox("Work Duration (minutes)", [25, 30, 45, 60], index=0)
+
+        with col_b:
+            break_duration = st.selectbox("Break Duration (minutes)", [5, 10, 15], index=0)
+
+        # Option to sync with circle
+        circles_data = make_request("GET", "/dashboard")
+        circles = circles_data.get('active_circles', []) if circles_data else []
+
+        if circles:
+            sync_with_circle = st.checkbox("Sync with study circle (group Pomodoro)")
+
+            if sync_with_circle:
+                selected_circle = st.selectbox(
+                    "Select Circle",
+                    options=[(c['id'], c['name']) for c in circles],
+                    format_func=lambda x: x[1]
+                )
+                circle_id = selected_circle[0]
+            else:
+                circle_id = None
+        else:
+            circle_id = None
+
+        if st.button("▶️ Start Pomodoro", use_container_width=True):
+            session_data = {
+                "duration_minutes": duration,
+                "break_minutes": break_duration,
+                "circle_id": circle_id,
+                "is_group_session": circle_id is not None
+            }
+
+            result = make_request("POST", "/pomodoro/start", session_data)
+
+            if result:
+                st.success(f"✅ Started {duration} minute Pomodoro session!")
+                st.info("💡 Stay focused! You'll earn 5 points when you complete the session.")
+                st.rerun()
+
+    # Tips section
+    st.markdown("---")
+    st.markdown("### 📚 Pomodoro Tips")
+    st.info("""
+    **How it works:**
+    1. ⏱️ Work for 25 minutes (or your chosen duration)
+    2. ☕ Take a 5 minute break
+    3. 🔁 Repeat 4 times, then take a longer break
+
+    **Tips for success:**
+    - Remove distractions before starting
+    - Use breaks to rest your eyes
+    - Track your progress over time
+    - Sync with study circles for group accountability
+    """)
+
+def video_chat_component(circle_id, circle_name):
+    """Jitsi video chat component"""
+    st.markdown("### 📹 Video Chat Room")
+
+    # Get or create room
+    room_data = make_request("POST", f"/video-rooms/create?circle_id={circle_id}")
+
+    if room_data:
+        room_name = room_data['room_name']
+        jitsi_url = room_data['jitsi_url']
+
+        st.info(f"**Room:** {room_name}")
+
+        # Jitsi iframe embed
+        jitsi_html = f"""
+        <div id="jitsi-container" style="height: 600px; width: 100%;">
+            <script src='https://meet.jit.si/external_api.js'></script>
+            <script>
+                const domain = 'meet.jit.si';
+                const options = {{
+                    roomName: '{room_name}',
+                    width: '100%',
+                    height: 600,
+                    parentNode: document.querySelector('#jitsi-container'),
+                    configOverrides: {{
+                        startWithAudioMuted: true,
+                        startWithVideoMuted: false,
+                        prejoinPageEnabled: false
+                    }},
+                    interfaceConfigOverrides: {{
+                        TOOLBAR_BUTTONS: [
+                            'microphone', 'camera', 'closedcaptions', 'desktop',
+                            'fullscreen', 'fodeviceselection', 'hangup', 'chat',
+                            'raisehand', 'videoquality', 'filmstrip', 'tileview'
+                        ],
+                        SHOW_JITSI_WATERMARK: false
+                    }}
+                }};
+                const api = new JitsiMeetExternalAPI(domain, options);
+            </script>
+        </div>
+        """
+
+        st.components.v1.html(jitsi_html, height=650)
+
+        st.caption("💡 Click 'Join' to enter the video room with your study circle members")
+        st.caption(f"🔗 Share this link: {jitsi_url}")
+
 # Main app logic
 def main():
     if not st.session_state.token:
@@ -798,6 +1183,10 @@ def main():
             community_hub_page()
         elif page == "Events":
             events_page()
+        elif page == "Achievements 🏆":
+            achievements_page()
+        elif page == "Pomodoro ⏱️":
+            pomodoro_page()
         elif page == "Profile":
             profile_page()
 
