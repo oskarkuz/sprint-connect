@@ -188,3 +188,167 @@ class PeerSupport(Base):
     # Relationships
     supporter = relationship("User", foreign_keys=[supporter_id])
     seeker = relationship("User", foreign_keys=[seeker_id])
+
+# ============== Gamification Models ==============
+
+class GamificationPoints(Base):
+    __tablename__ = "gamification_points"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    points = Column(Integer, default=0)
+    level = Column(Integer, default=1)
+    total_points_earned = Column(Integer, default=0)
+    streak_days = Column(Integer, default=0)
+    last_activity = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User")
+
+class Badge(Base):
+    __tablename__ = "badges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    description = Column(Text)
+    icon = Column(String)  # emoji or icon name
+    category = Column(String)  # wellness, participation, achievement, etc.
+    points_required = Column(Integer, default=0)
+    criteria = Column(JSON)  # Flexible criteria for earning badge
+    rarity = Column(String, default="common")  # common, rare, epic, legendary
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class UserBadge(Base):
+    __tablename__ = "user_badges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    badge_id = Column(Integer, ForeignKey("badges.id"))
+    earned_at = Column(DateTime, default=datetime.utcnow)
+    progress = Column(Float, default=0.0)  # 0.0 to 1.0
+
+    # Relationships
+    user = relationship("User")
+    badge = relationship("Badge")
+
+class PointsTransaction(Base):
+    __tablename__ = "points_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    points = Column(Integer)  # Can be positive or negative
+    action_type = Column(String)  # checkin, post, comment, event_rsvp, etc.
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User")
+
+# ============== Pomodoro & Study Session Models ==============
+
+class PomodoroSession(Base):
+    __tablename__ = "pomodoro_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    circle_id = Column(Integer, ForeignKey("study_circles.id"), nullable=True)
+    duration_minutes = Column(Integer, default=25)
+    break_minutes = Column(Integer, default=5)
+    started_at = Column(DateTime)
+    ended_at = Column(DateTime, nullable=True)
+    completed = Column(Boolean, default=False)
+    is_group_session = Column(Boolean, default=False)
+
+    # Relationships
+    user = relationship("User")
+    circle = relationship("StudyCircle")
+
+class StudySession(Base):
+    __tablename__ = "study_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    circle_id = Column(Integer, ForeignKey("study_circles.id"), nullable=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    session_type = Column(String)  # solo, group, pomodoro
+    notes = Column(Text)
+    productivity_rating = Column(Integer)  # 1-5
+
+    # Relationships
+    user = relationship("User")
+    circle = relationship("StudyCircle")
+    course = relationship("Course")
+
+# ============== Video & Collaboration Models ==============
+
+class VideoRoom(Base):
+    __tablename__ = "video_rooms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    circle_id = Column(Integer, ForeignKey("study_circles.id"))
+    room_name = Column(String, unique=True, nullable=False)
+    jitsi_room_id = Column(String, unique=True)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    last_used = Column(DateTime)
+    participant_count = Column(Integer, default=0)
+
+    # Relationships
+    circle = relationship("StudyCircle")
+    creator = relationship("User")
+
+class WhiteboardSession(Base):
+    __tablename__ = "whiteboard_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    circle_id = Column(Integer, ForeignKey("study_circles.id"))
+    session_name = Column(String)
+    session_data = Column(Text)  # JSON string of whiteboard data
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+    # Relationships
+    circle = relationship("StudyCircle")
+    creator = relationship("User")
+
+# ============== Notification Models ==============
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String)  # event, message, achievement, alert
+    is_read = Column(Boolean, default=False)
+    action_url = Column(String)  # URL to navigate to when clicked
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User")
+
+# ============== Analytics & Insights Models ==============
+
+class UserEngagement(Base):
+    __tablename__ = "user_engagement"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    date = Column(DateTime, default=datetime.utcnow)
+    checkins_count = Column(Integer, default=0)
+    posts_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
+    study_minutes = Column(Integer, default=0)
+    circles_joined = Column(Integer, default=0)
+    events_attended = Column(Integer, default=0)
+    engagement_score = Column(Float, default=0.0)  # Calculated score
+
+    # Relationships
+    user = relationship("User")

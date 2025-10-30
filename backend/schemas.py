@@ -236,3 +236,176 @@ class StudentDashboard(BaseModel):
     recent_checkins: List[WellnessCheckIn]
     upcoming_events: List[Event]
     community_posts: List[CommunityPost]
+
+# ============== Gamification Schemas ==============
+
+class BadgeBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    category: Optional[str] = None
+    points_required: int = 0
+    criteria: Optional[Dict[str, Any]] = {}
+    rarity: str = "common"
+
+class Badge(BadgeBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserBadgeBase(BaseModel):
+    badge_id: int
+    progress: float = 0.0
+
+class UserBadge(UserBadgeBase):
+    id: int
+    user_id: int
+    earned_at: datetime
+    badge: Optional[Badge] = None
+
+    class Config:
+        from_attributes = True
+
+class GamificationPointsBase(BaseModel):
+    points: int = 0
+    level: int = 1
+    total_points_earned: int = 0
+    streak_days: int = 0
+
+class GamificationPoints(GamificationPointsBase):
+    id: int
+    user_id: int
+    last_activity: datetime
+
+    class Config:
+        from_attributes = True
+
+class PointsTransactionBase(BaseModel):
+    points: int
+    action_type: str
+    description: Optional[str] = None
+
+class PointsTransaction(PointsTransactionBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class LeaderboardEntry(BaseModel):
+    user_id: int
+    username: str
+    points: int
+    level: int
+    rank: int
+
+class UserStatsResponse(BaseModel):
+    points: int
+    level: int
+    total_points_earned: int
+    streak_days: int
+    badges_count: int
+    rank: int
+    total_users: int
+
+# ============== Pomodoro Schemas ==============
+
+class PomodoroSessionBase(BaseModel):
+    duration_minutes: int = 25
+    break_minutes: int = 5
+    circle_id: Optional[int] = None
+    is_group_session: bool = False
+
+class PomodoroSessionCreate(PomodoroSessionBase):
+    pass
+
+class PomodoroSession(PomodoroSessionBase):
+    id: int
+    user_id: int
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    completed: bool
+
+    class Config:
+        from_attributes = True
+
+class PomodoroStats(BaseModel):
+    total_sessions: int
+    total_minutes: int
+    total_hours: float
+    completed_today: int
+    average_per_day: float
+
+# ============== Study Session Schemas ==============
+
+class StudySessionBase(BaseModel):
+    circle_id: Optional[int] = None
+    course_id: Optional[int] = None
+    session_type: str = "solo"
+    notes: Optional[str] = None
+    productivity_rating: Optional[int] = None
+
+class StudySessionCreate(StudySessionBase):
+    pass
+
+class StudySession(StudySessionBase):
+    id: int
+    user_id: int
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+# ============== Video Room Schemas ==============
+
+class VideoRoomBase(BaseModel):
+    circle_id: int
+    room_name: str
+
+class VideoRoomCreate(VideoRoomBase):
+    pass
+
+class VideoRoom(VideoRoomBase):
+    id: int
+    jitsi_room_id: str
+    created_by: int
+    created_at: datetime
+    is_active: bool
+    last_used: Optional[datetime] = None
+    participant_count: int
+
+    class Config:
+        from_attributes = True
+
+# ============== Notification Schemas ==============
+
+class NotificationBase(BaseModel):
+    title: str
+    message: str
+    notification_type: str = "info"
+    action_url: Optional[str] = None
+
+class Notification(NotificationBase):
+    id: int
+    user_id: int
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ============== Analytics Schemas ==============
+
+class StressAnalysis(BaseModel):
+    average_mood: float
+    recent_average: float
+    trend: str
+    low_mood_days_count: int
+    alert: bool
+    alert_message: str
+    total_checkins: int
