@@ -196,6 +196,11 @@ def match_to_circle(
                 )
                 db.add(member)
                 db.commit()
+
+                # Award points for joining circle
+                from . import gamification
+                gamification.award_points(db, current_user.id, "join_circle", f"Joined {circle.name}")
+
                 db.refresh(circle)
                 return circle
     
@@ -275,6 +280,12 @@ def create_checkin(
     db.add(db_checkin)
     db.commit()
     db.refresh(db_checkin)
+
+    # Award points for check-in and update streak (import gamification at top of file)
+    from . import gamification
+    gamification.award_points(db, current_user.id, "daily_checkin", "Daily wellness check-in")
+    gamification.update_streak(db, current_user.id)
+
     return db_checkin
 
 @app.get("/checkins", response_model=List[schemas.WellnessCheckIn])
@@ -375,6 +386,11 @@ def create_post(
     db.add(db_post)
     db.commit()
     db.refresh(db_post)
+
+    # Award points for creating post
+    from . import gamification
+    gamification.award_points(db, current_user.id, "create_post", "Created community post")
+
     db_post.author = current_user
     return db_post
 
@@ -583,6 +599,402 @@ def get_admin_stats(
         "upcoming_events": upcoming_events
     }
 
+# ============== Gamification Endpoints ==============
+
+from . import gamification
+
+@app.get("/gamification/stats", response_model=schemas.UserStatsResponse)
+def get_my_gamification_stats(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get current user's gamification statistics"""
+    stats = gamification.get_user_stats(db, current_user.id)
+    return schemas.UserStatsResponse(**stats)
+
+@app.get("/gamification/leaderboard")
+def get_leaderboard(
+    limit: int = 10,
+    timeframe: str = "all_time",
+    db: Session = Depends(get_db)
+):
+    """Get leaderboard - timeframe: all_time, week, month"""
+    leaders = gamification.get_leaderboard(db, limit, timeframe)
+
+    leaderboard_data = []
+    for idx, leader in enumerate(leaders, 1):
+        user = db.query(models.User).filter(models.User.id == leader.user_id).first()
+        leaderboard_data.append({
+            "rank": idx,
+            "user_id": leader.user_id,
+            "username": user.username if user else "Unknown",
+            "points": leader.points,
+            "level": leader.level
+        })
+
+    return {
+        "timeframe": timeframe,
+        "leaderboard": leaderboard_data
+    }
+
+@app.get("/gamification/badges", response_model=List[schemas.Badge])
+def get_all_badges(db: Session = Depends(get_db)):
+    """Get all available badges"""
+    return db.query(models.Badge).all()
+
+@app.get("/gamification/my-badges")
+def get_my_badges(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get current user's earned badges"""
+    user_badges = db.query(models.UserBadge).filter(
+        models.UserBadge.user_id == current_user.id
+    ).all()
+
+    result = []
+    for ub in user_badges:
+        badge = db.query(models.Badge).filter(models.Badge.id == ub.badge_id).first()
+        result.append({
+            "id": ub.id,
+            "earned_at": ub.earned_at,
+            "progress": ub.progress,
+            "badge": badge
+        })
+
+    return result
+
+@app.get("/gamification/transactions")
+def get_my_transactions(
+    limit: int = 20,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's recent points transactions"""
+    transactions = db.query(models.PointsTransaction).filter(
+        models.PointsTransaction.user_id == current_user.id
+    ).order_by(models.PointsTransaction.created_at.desc()).limit(limit).all()
+
+    return transactions
+
+# ============== Pomodoro Endpoints ==============
+
+@app.post("/pomodoro/start", response_model=schemas.PomodoroSession)
+def start_pomodoro_session(
+    session_data: schemas.PomodoroSessionCreate,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Start a new Pomodoro session"""
+    session = models.PomodoroSession(
+        user_id=current_user.id,
+        circle_id=session_data.circle_id,
+        duration_minutes=session_data.duration_minutes,
+        break_minutes=session_data.break_minutes,
+        is_group_session=session_data.is_group_session,
+        started_at=datetime.utcnow()
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    return session
+
+@app.post("/pomodoro/{session_id}/complete")
+def complete_pomodoro_session(
+    session_id: int,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a Pomodoro session as completed"""
+    session = db.query(models.PomodoroSession).filter(
+        models.PomodoroSession.id == session_id,
+        models.PomodoroSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.ended_at = datetime.utcnow()
+    session.completed = True
+
+    # Award points for completing Pomodoro
+    gamification.award_points(db, current_user.id, "pomodoro_complete",
+                             f"Completed {session.duration_minutes} min Pomodoro")
+
+    db.commit()
+    db.refresh(session)
+
+    return {"message": "Pomodoro completed!", "session": session}
+
+@app.get("/pomodoro/stats", response_model=schemas.PomodoroStats)
+def get_pomodoro_stats(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's Pomodoro statistics"""
+    sessions = db.query(models.PomodoroSession).filter(
+        models.PomodoroSession.user_id == current_user.id,
+        models.PomodoroSession.completed == True
+    ).all()
+
+    today = datetime.utcnow().date()
+    completed_today = sum(1 for s in sessions if s.ended_at and s.ended_at.date() == today)
+
+    total_sessions = len(sessions)
+    total_minutes = sum(s.duration_minutes for s in sessions)
+    total_hours = total_minutes / 60
+
+    # Calculate average per day
+    if sessions:
+        first_session = min(s.started_at for s in sessions)
+        days_active = (datetime.utcnow() - first_session).days + 1
+        average_per_day = total_sessions / days_active if days_active > 0 else 0
+    else:
+        average_per_day = 0
+
+    return schemas.PomodoroStats(
+        total_sessions=total_sessions,
+        total_minutes=total_minutes,
+        total_hours=total_hours,
+        completed_today=completed_today,
+        average_per_day=average_per_day
+    )
+
+@app.get("/pomodoro/active")
+def get_active_pomodoro(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's current active Pomodoro session"""
+    active = db.query(models.PomodoroSession).filter(
+        models.PomodoroSession.user_id == current_user.id,
+        models.PomodoroSession.completed == False,
+        models.PomodoroSession.ended_at.is_(None)
+    ).order_by(models.PomodoroSession.started_at.desc()).first()
+
+    if not active:
+        return {"active": False, "session": None}
+
+    # Calculate time remaining
+    elapsed = (datetime.utcnow() - active.started_at).total_seconds() / 60
+    remaining = max(0, active.duration_minutes - elapsed)
+
+    return {
+        "active": True,
+        "session": active,
+        "elapsed_minutes": elapsed,
+        "remaining_minutes": remaining
+    }
+
+# ============== Video Room Endpoints ==============
+
+@app.post("/video-rooms/create")
+def create_video_room(
+    circle_id: int,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create or get a video room for a study circle"""
+    circle = db.query(models.StudyCircle).filter(
+        models.StudyCircle.id == circle_id
+    ).first()
+
+    if not circle:
+        raise HTTPException(status_code=404, detail="Circle not found")
+
+    # Check if user is a member
+    is_member = db.query(models.CircleMember).filter(
+        models.CircleMember.circle_id == circle_id,
+        models.CircleMember.student_id == current_user.id
+    ).first()
+
+    if not is_member:
+        raise HTTPException(status_code=403, detail="You must be a circle member")
+
+    # Get or create room
+    room = db.query(models.VideoRoom).filter(
+        models.VideoRoom.circle_id == circle_id,
+        models.VideoRoom.is_active == True
+    ).first()
+
+    if not room:
+        import uuid
+        room = models.VideoRoom(
+            circle_id=circle_id,
+            room_name=f"SprintConnect-Circle-{circle_id}",
+            jitsi_room_id=f"SprintConnect-{circle_id}-{str(uuid.uuid4())[:8]}",
+            created_by=current_user.id
+        )
+        db.add(room)
+        db.commit()
+        db.refresh(room)
+
+    room.last_used = datetime.utcnow()
+    db.commit()
+
+    return {
+        "room": room,
+        "jitsi_url": f"https://meet.jit.si/{room.room_name}",
+        "room_name": room.room_name
+    }
+
+@app.get("/video-rooms/{circle_id}")
+def get_video_room(
+    circle_id: int,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get video room for a circle"""
+    room = db.query(models.VideoRoom).filter(
+        models.VideoRoom.circle_id == circle_id,
+        models.VideoRoom.is_active == True
+    ).first()
+
+    if not room:
+        return {"exists": False, "room": None}
+
+    return {
+        "exists": True,
+        "room": room,
+        "jitsi_url": f"https://meet.jit.si/{room.room_name}"
+    }
+
+# ============== Stress Analysis Endpoints ==============
+
+@app.get("/wellness/stress-analysis", response_model=schemas.StressAnalysis)
+def analyze_stress_patterns(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze user's stress patterns from wellness check-ins"""
+    # Get last 30 days of check-ins
+    days_ago_30 = datetime.utcnow() - timedelta(days=30)
+    checkins = db.query(models.WellnessCheckIn).filter(
+        models.WellnessCheckIn.user_id == current_user.id,
+        models.WellnessCheckIn.created_at >= days_ago_30
+    ).order_by(models.WellnessCheckIn.created_at).all()
+
+    if len(checkins) < 7:
+        return schemas.StressAnalysis(
+            average_mood=0.0,
+            recent_average=0.0,
+            trend="insufficient_data",
+            low_mood_days_count=0,
+            alert=False,
+            alert_message="Need at least 7 check-ins for analysis",
+            total_checkins=len(checkins)
+        )
+
+    # Analyze patterns
+    mood_scores = [c.mood_score for c in checkins]
+    avg_mood = sum(mood_scores) / len(mood_scores)
+
+    # Recent vs older average
+    recent_avg = sum(mood_scores[-7:]) / 7
+    older_avg = sum(mood_scores[-14:-7]) / 7 if len(mood_scores) >= 14 else avg_mood
+
+    # Detect trend
+    if recent_avg < older_avg - 0.5:
+        trend = "declining"
+    elif recent_avg > older_avg + 0.5:
+        trend = "improving"
+    else:
+        trend = "stable"
+
+    # Count low mood days
+    low_mood_count = sum(1 for score in mood_scores[-7:] if score <= 2)
+
+    # Determine if alert needed
+    alert = False
+    alert_message = ""
+
+    if trend == "declining" and low_mood_count >= 3:
+        alert = True
+        alert_message = "We've noticed your mood has been declining. Consider reaching out to a peer supporter."
+
+        # Create notification
+        notification = models.Notification(
+            user_id=current_user.id,
+            title="Wellness Check-In Alert",
+            message=alert_message,
+            notification_type="alert",
+            action_url="/peer-support"
+        )
+        db.add(notification)
+        db.commit()
+    elif low_mood_count >= 4:
+        alert = True
+        alert_message = "You've had several low mood days. Would you like to connect with support?"
+
+    return schemas.StressAnalysis(
+        average_mood=avg_mood,
+        recent_average=recent_avg,
+        trend=trend,
+        low_mood_days_count=low_mood_count,
+        alert=alert,
+        alert_message=alert_message,
+        total_checkins=len(checkins)
+    )
+
+# ============== Notification Endpoints ==============
+
+@app.get("/notifications", response_model=List[schemas.Notification])
+def get_my_notifications(
+    limit: int = 20,
+    unread_only: bool = False,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's notifications"""
+    query = db.query(models.Notification).filter(
+        models.Notification.user_id == current_user.id
+    )
+
+    if unread_only:
+        query = query.filter(models.Notification.is_read == False)
+
+    notifications = query.order_by(
+        models.Notification.created_at.desc()
+    ).limit(limit).all()
+
+    return notifications
+
+@app.post("/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: int,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read"""
+    notification = db.query(models.Notification).filter(
+        models.Notification.id == notification_id,
+        models.Notification.user_id == current_user.id
+    ).first()
+
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.commit()
+
+    return {"message": "Notification marked as read"}
+
+@app.post("/notifications/read-all")
+def mark_all_notifications_read(
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Mark all notifications as read"""
+    db.query(models.Notification).filter(
+        models.Notification.user_id == current_user.id,
+        models.Notification.is_read == False
+    ).update({"is_read": True})
+
+    db.commit()
+
+    return {"message": "All notifications marked as read"}
+
 # ============== Health Check ==============
 
 @app.get("/")
@@ -590,8 +1002,15 @@ def root():
     """API health check"""
     return {
         "message": "Sprint Connect API is running!",
-        "version": "1.0.0",
-        "docs": "/docs"
+        "version": "2.0.0",  # Updated version
+        "docs": "/docs",
+        "features": [
+            "Gamification System",
+            "Pomodoro Timer",
+            "Video Chat (Jitsi)",
+            "Stress Analysis",
+            "Notifications"
+        ]
     }
 
 @app.get("/health")

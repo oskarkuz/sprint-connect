@@ -263,7 +263,19 @@ def init_demo_data():
     
     # Commit all changes
     db.commit()
-    
+
+    # Initialize gamification badges
+    print("\n🏆 Initializing gamification system...")
+    from .gamification import initialize_badges
+    initialize_badges(db)
+
+    # Create gamification points records for all users
+    for student in students:
+        from .gamification import get_or_create_user_points
+        get_or_create_user_points(db, student.id)
+
+    db.commit()
+
     print("✅ Database initialized successfully!")
     print("\n📝 Demo Accounts:")
     print("Student: sarah@srh.nl / password: demo123")
@@ -275,6 +287,8 @@ def init_demo_data():
     print(f"- {db.query(models.WellnessCheckIn).count()} wellness check-ins")
     print(f"- {db.query(models.CommunityPost).count()} community posts")
     print(f"- {db.query(models.Event).count()} events")
+    print(f"- {db.query(models.Badge).count()} badges")
+    print("\n🎮 Gamification system ready!")
 
 if __name__ == "__main__":
     try:
